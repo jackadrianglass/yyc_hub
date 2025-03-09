@@ -1,0 +1,12 @@
+
+def "nur build" [] {
+	go build
+}
+
+def "nur run" [] {
+	go run
+}
+
+def "nur watch" [] {
+	gowatch
+}

@@ -1,0 +1,4 @@
+appname: "yyc_hub"
+watch_exts:
+    - .yml
+    - .tmpl
