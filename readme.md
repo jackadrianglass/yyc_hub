@@ -53,3 +53,12 @@ The goal is to keep it simple and accessible. Folks shouldn't struggle with sett
 - [ ] Event feed (list format first)
 - [ ] Event calendar
 - [ ] Link to event
+
+# Ideas
+
+- Have the community be able to link to a discord server so that a bot could post about events automatically
+- Try the coworking idea except with each community
+    - A user can post a scheduled coworking session
+    - That session has a limited amount
+    - User can flag (if they choose) anyone who doesn't show up
+    - The user can post it to a community if they choose to do so
