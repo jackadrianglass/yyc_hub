@@ -6,6 +6,7 @@
     integrity="sha384-L6OqL9pRWyyFU3+/bjdSri+iIphTN/bvYyM37tICVyOJkWZLpP2vGn6VUEXgzg6h"
   	crossorigin="anonymous"
 ></script>
+<script src="https://unpkg.com/htmx.org/dist/ext/json-enc.js"></script>
 </head>
 <body>
 
@@ -14,6 +15,17 @@
 <button hx-get="/ping">
   Ping
 </button>
+
+<form
+  hx-target="#response" 
+  hx-post="/test-form"
+>
+  <input type="email" name="email" placeholder="Email" required><br>
+  <textarea name="message" placeholder="Message" required></textarea><br>
+  <button type="submit">Send</button>
+</form>
+
+<div id="response"></div>
 
 </body>
 </html> 
