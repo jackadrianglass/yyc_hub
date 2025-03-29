@@ -14,7 +14,7 @@ type TestForm struct {
 	Message string `form:"message" json:"message" binding:"required"`
 }
 
-type Event struct {
+type EventA struct {
 	Title       string
 	Description string
 	// Date        string // todo: Make this into a date time object
@@ -49,7 +49,7 @@ func OpenConnection() (*EventDb, error) {
 	}, nil
 }
 
-func (self *EventDb) Insert(event Event) (int, error) {
+func (self *EventDb) Insert(event EventA) (int, error) {
 	res, err := self.db.Exec("INSERT INTO activities VALUES(NULL,?,?);", event.Title, event.Description)
 	if err != nil {
 		return 0, err
@@ -69,7 +69,7 @@ func main() {
 	// 	return
 	// }
 
-	// id, error := db.Insert(Event { Title: "awesome sauce", Description: "Saucy awesomeness" })
+	// id, error := db.Insert(EventA { Title: "awesome sauce", Description: "Saucy awesomeness" })
 	// if error != nil {
 	// 	fmt.Println(error)
 	// 	return

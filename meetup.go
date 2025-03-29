@@ -1,30 +1,15 @@
-package yyc_hub
+package main
 
 import (
-	"bytes"
 	"encoding/json"
-	"errors"
-	"fmt"
-	"io"
-	"net/http"
+	_ "errors"
+	_ "fmt"
 	"time"
 
-	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/client"
 )
 
 const MeetupGraphqlApiUrl = "https://api.meetup.com/gql"
-
-type MeetupService struct {
-	httpClient   *http.Client
-	eventService service.EventService
-}
-
-func NewMeetupService(httpClient *http.Client, eventService service.EventService) *MeetupService {
-	return &MeetupService{
-		httpClient:   httpClient,
-		eventService: eventService,
-	}
-}
 
 type GraphQLRequest struct {
 	Query     string                 `json:"query"`
@@ -86,7 +71,7 @@ type Event struct {
 	GroupName        string    // `gorm:"column:group_name"`
 }
 
-func (m *MeetupService) FetchEvents(accessToken string, groupUrlName string) ([]domain.Event, error) {
+func FetchEvents(accessToken string, groupUrlName string) ([]Event, error) {
 	graphqlReq := GraphQLRequest{
 		Query: `
 			query ($groupUrlname: String!, $input: ConnectionInput!) { 
@@ -120,35 +105,31 @@ func (m *MeetupService) FetchEvents(accessToken string, groupUrlName string) ([]
 		return nil, err
 	}
 
-	agent := fiber.AcquireAgent()
-	defer fiber.ReleaseAgent(agent)
-
-	req := agent.Request()
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-	req.Header.Set("Content-Type", "application/json")
-	req.SetRequestURI(MeetupGraphqlApiUrl)
-	req.SetBody(graphqlReqBytes)
-	req.Header.SetMethod(fiber.MethodPost)
-
-	if err := agent.Parse(); err != nil {
+	cc := client.New()
+	rsp, err := cc.Post(MeetupGraphqlApiUrl, client.Config{
+		Header: map[string]string{
+			"Authorization": "Bearer " + accessToken,
+			"Content-Type":  "application/json",
+		},
+		Body: graphqlReqBytes,
+	})
+	if err != nil {
 		return nil, err
 	}
 
-	resp, errs := agent.Bytes()
-	if len(errs) > 0 {
-		return nil, errs[0]
-	}
-
-	var response MeetupResponse
-	if err := json.Unmarshal(resp, &response); err != nil {
+	var decodedRsp MeetupResponse
+	if err := json.Unmarshal(rsp.Body(), &decodedRsp); err != nil {
 		return nil, err
 	}
 
-	eventsToSave := make([]domain.Event, 0, len(edges))
-	for _, edge := range response.Data.UpcomingEvents.Events {
+	eventsToSave := make([]Event, 0, len(decodedRsp.Data.GroupByUrlname.UpcomingEvents.Edges))
+	for _, edge := range decodedRsp.Data.GroupByUrlname.UpcomingEvents.Edges {
 
 		event := Event{
-
+			// ID: edge.Node.ID,
+			// EventDate: edge.Node.DateTime,
+			EventLocation: edge.Node.Venue.Address,
+			EventDescription: "?",
 			EventGroupName: groupUrlName,
 			GroupName:      groupUrlName,
 			Dynamic:        true,
@@ -160,147 +141,147 @@ func (m *MeetupService) FetchEvents(accessToken string, groupUrlName string) ([]
 	return eventsToSave, nil
 }
 
-func (m *MeetupService) SyncEventsForGroup(accessToken string, groupName string) error {
-	oldEvents, err := m.eventService.GetDynamicEventsForGroup(groupName)
-	if err != nil {
-		return err
-	}
-
-	newEvents, err := m.FetchEvents(accessToken, groupName)
-	if err != nil {
-		return err
-	}
-
-	oldEventsMap := make(map[string]domain.Event)
-	for _, event := range oldEvents {
-		oldEventsMap[event.EventID] = event
-	}
-
-	for i := range newEvents {
-		if oldEvent, exists := oldEventsMap[newEvents[i].EventID]; exists {
-			newEvents[i].ID = oldEvent.ID
-		}
-	}
-
-	if err := m.eventService.SaveEvents(newEvents); err != nil {
-		return err
-	}
-
-	eventsToRemove := findEventsToRemove(oldEvents, newEvents)
-
-	if len(eventsToRemove) > 0 {
-		return m.eventService.DeleteEvents(eventsToRemove)
-	}
-
-	return nil
-}
-
-// VerifyGroupParameters verifies that the group is in Calgary and has Technology as its topic
-func (m *MeetupService) VerifyGroupParameters(groupName string, accessToken string) error {
-	// Create GraphQL query
-	graphqlReq := GraphQLRequest{
-		Query: `
-            query GetEventsByGroup($groupUrlname: String!) {
-                groupByUrlname(urlname: $groupUrlname) {
-                    id
-                    name
-                    city
-                    topicCategory {
-                        id
-                        urlkey
-                        name
-                        color
-                        imageUrl
-                        defaultTopic {
-                            name
-                        }
-                    }
-                }
-            }
-        `,
-		Variables: map[string]interface{}{
-			"groupUrlname": groupName,
-		},
-	}
-
-	// Marshal request to JSON
-	graphqlReqBytes, err := json.Marshal(graphqlReq)
-	if err != nil {
-		return err
-	}
-
-	// Create an HTTP client using Fiber's Agent
-	agent := fiber.AcquireAgent()
-	defer fiber.ReleaseAgent(agent)
-
-	// Setup the request
-	req := agent.Request()
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-	req.Header.Set("Content-Type", "application/json")
-	req.SetRequestURI(MeetupGraphqlApiUrl)
-	req.SetBody(graphqlReqBytes)
-	req.Header.SetMethod(fiber.MethodPost)
-
-	// Send the request
-	if err := agent.Parse(); err != nil {
-		return err
-	}
-
-	// Get the response
-	resp, errs := agent.Bytes()
-	if len(errs) > 0 {
-		return errs[0]
-	}
-
-	// Parse response
-	var result map[string]interface{}
-	if err := json.Unmarshal(resp, &result); err != nil {
-		return err
-	}
-
-	// Check for errors in the GraphQL response
-	if errNodes, exists := result["errors"].([]interface{}); exists && len(errNodes) > 0 {
-		if errMsg, ok := errNodes[0].(map[string]interface{})["message"].(string); ok {
-			return GraphQLError{Message: errMsg}
-		}
-		return GraphQLError{Message: "Unknown GraphQL error"}
-	}
-
-	// Extract city and topic category
-	data, ok := result["data"].(map[string]interface{})
-	if !ok {
-		return errors.New("invalid response format: missing data field")
-	}
-
-	groupByUrlname, ok := data["groupByUrlname"].(map[string]interface{})
-	if !ok {
-		return errors.New("invalid response format: missing groupByUrlname field")
-	}
-
-	// Check city
-	city, ok := groupByUrlname["city"].(string)
-	if !ok {
-		return errors.New("invalid response format: missing city field")
-	}
-
-	if city != "Calgary" {
-		return InvalidGroupParameterError{Message: fmt.Sprintf("Group from wrong city provided. Provided '%s'", city)}
-	}
-
-	// Check topic category
-	topicCategory, ok := groupByUrlname["topicCategory"].(map[string]interface{})
-	if !ok {
-		return errors.New("invalid response format: missing topicCategory field")
-	}
-
-	topicCategoryName, ok := topicCategory["name"].(string)
-	if !ok {
-		return errors.New("invalid response format: missing topicCategory.name field")
-	}
-
-	if topicCategoryName != "Technology" {
-		return InvalidGroupParameterError{Message: fmt.Sprintf("Group from wrong topic category provided. Provided '%s'", topicCategoryName)}
-	}
-
-	return nil
-}
+// func (m *MeetupService) SyncEventsForGroup(accessToken string, groupName string) error {
+// 	oldEvents, err := m.eventService.GetDynamicEventsForGroup(groupName)
+// 	if err != nil {
+// 		return err
+// 	
+//
+// 	newEvents, err := m.FetchEvents(accessToken, groupName)
+// 	if err != nil {
+// 		return err
+// 	}
+//
+// 	oldEventsMap := make(map[string]Event)
+// 	for _, event := range oldEvents {
+// 		oldEventsMap[event.EventID] = event
+// 	}
+//
+// 	for i := range newEvents {
+// 		if oldEvent, exists := oldEventsMap[newEvents[i].EventID]; exists {
+// 			newEvents[i].ID = oldEvent.ID
+// 		}
+// 	}
+//
+// 	if err := m.eventService.SaveEvents(newEvents); err != nil {
+// 		return err
+// 	}
+//
+// 	eventsToRemove := findEventsToRemove(oldEvents, newEvents)
+//
+// 	if len(eventsToRemove) > 0 {
+// 		return m.eventService.DeleteEvents(eventsToRemove)
+// 	}
+//
+// 	return nil
+// }
+//
+// // VerifyGroupParameters verifies that the group is in Calgary and has Technology as its topic
+// func (m *MeetupService) VerifyGroupParameters(groupName string, accessToken string) error {
+// 	// Create GraphQL query
+// 	graphqlReq := GraphQLRequest{
+// 		Query: `
+//             query GetEventsByGroup($groupUrlname: String!) {
+//                 groupByUrlname(urlname: $groupUrlname) {
+//                     id
+//                     name
+//                     city
+//                     topicCategory {
+//                         id
+//                         urlkey
+//                         name
+//                         color
+//                         imageUrl
+//                         defaultTopic {
+//                             name
+//                         }
+//                     }
+//                 }
+//             }
+//         `,
+// 		Variables: map[string]interface{}{
+// 			"groupUrlname": groupName,
+// 		},
+// 	}
+//
+// 	// Marshal request to JSON
+// 	graphqlReqBytes, err := json.Marshal(graphqlReq)
+// 	if err != nil {
+// 		return err
+// 	}
+//
+// 	// Create an HTTP client using Fiber's Agent
+// 	agent := fiber.AcquireAgent()
+// 	defer fiber.ReleaseAgent(agent)
+//
+// 	// Setup the request
+// 	req := agent.Request()
+// 	req.Header.Set("Authorization", "Bearer "+accessToken)
+// 	req.Header.Set("Content-Type", "application/json")
+// 	req.SetRequestURI(MeetupGraphqlApiUrl)
+// 	req.SetBody(graphqlReqBytes)
+// 	req.Header.SetMethod(fiber.MethodPost)
+//
+// 	// Send the request
+// 	if err := agent.Parse(); err != nil {
+// 		return err
+// 	}
+//
+// 	// Get the response
+// 	resp, errs := agent.Bytes()
+// 	if len(errs) > 0 {
+// 		return errs[0]
+// 	}
+//
+// 	// Parse response
+// 	var result map[string]interface{}
+// 	if err := json.Unmarshal(resp, &result); err != nil {
+// 		return err
+// 	}
+//
+// 	// Check for errors in the GraphQL response
+// 	if errNodes, exists := result["errors"].([]interface{}); exists && len(errNodes) > 0 {
+// 		if errMsg, ok := errNodes[0].(map[string]interface{})["message"].(string); ok {
+// 			return GraphQLError{Message: errMsg}
+// 		}
+// 		return GraphQLError{Message: "Unknown GraphQL error"}
+// 	}
+//
+// 	// Extract city and topic category
+// 	data, ok := result["data"].(map[string]interface{})
+// 	if !ok {
+// 		return errors.New("invalid response format: missing data field")
+// 	}
+//
+// 	groupByUrlname, ok := data["groupByUrlname"].(map[string]interface{})
+// 	if !ok {
+// 		return errors.New("invalid response format: missing groupByUrlname field")
+// 	}
+//
+// 	// Check city
+// 	city, ok := groupByUrlname["city"].(string)
+// 	if !ok {
+// 		return errors.New("invalid response format: missing city field")
+// 	}
+//
+// 	if city != "Calgary" {
+// 		return InvalidGroupParameterError{Message: fmt.Sprintf("Group from wrong city provided. Provided '%s'", city)}
+// 	}
+//
+// 	// Check topic category
+// 	topicCategory, ok := groupByUrlname["topicCategory"].(map[string]interface{})
+// 	if !ok {
+// 		return errors.New("invalid response format: missing topicCategory field")
+// 	}
+//
+// 	topicCategoryName, ok := topicCategory["name"].(string)
+// 	if !ok {
+// 		return errors.New("invalid response format: missing topicCategory.name field")
+// 	}
+//
+// 	if topicCategoryName != "Technology" {
+// 		return InvalidGroupParameterError{Message: fmt.Sprintf("Group from wrong topic category provided. Provided '%s'", topicCategoryName)}
+// 	}
+//
+// 	return nil
+// }
