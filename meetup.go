@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	_ "errors"
 	_ "fmt"
-	"time"
 
 	"github.com/gofiber/fiber/v3/client"
 )
@@ -12,16 +11,12 @@ import (
 const MeetupGraphqlApiUrl = "https://api.meetup.com/gql"
 
 type GraphQLRequest struct {
-	Query     string                 `json:"query"`
-	Variables map[string]interface{} `json:"variables"`
+	Query     string         `json:"query"`
+	Variables map[string]any `json:"variables"`
 }
 
 type GraphQLError struct {
 	Message string
-}
-
-func (e GraphQLError) Error() string {
-	return e.Message
 }
 
 type InvalidGroupParameterError struct {
@@ -59,17 +54,6 @@ type MeetupResponse struct {
 	} `json:"errors,omitempty"`
 }
 
-// todo: maybe use gorm when we want it
-type Event struct {
-	ID               int64     // `gorm:"primaryKey;column:id"`
-	EventDate        time.Time // `gorm:"column:event_date"`
-	EventLocation    string    // `gorm:"column:event_location"`
-	EventDescription string    // `gorm:"column:event_description"`
-	EventGroupName   string    // `gorm:"column:event_group_name"`
-	Dynamic          bool      // `gorm:"column:dynamic"`
-	EventID          string    // `gorm:"column:event_id"`
-	GroupName        string    // `gorm:"column:group_name"`
-}
 
 func FetchEvents(accessToken string, groupUrlName string) ([]Event, error) {
 	graphqlReq := GraphQLRequest{
@@ -92,9 +76,9 @@ func FetchEvents(accessToken string, groupUrlName string) ([]Event, error) {
 				} 
 			}
 		`,
-		Variables: map[string]interface{}{
+		Variables: map[string]any{
 			"groupUrlname": groupUrlName,
-			"input": map[string]interface{}{
+			"input": map[string]any{
 				"first": 10,
 			},
 		},
@@ -128,11 +112,11 @@ func FetchEvents(accessToken string, groupUrlName string) ([]Event, error) {
 		event := Event{
 			// ID: edge.Node.ID,
 			// EventDate: edge.Node.DateTime,
-			EventLocation: edge.Node.Venue.Address,
+			EventLocation:    edge.Node.Venue.Address,
 			EventDescription: "?",
-			EventGroupName: groupUrlName,
-			GroupName:      groupUrlName,
-			Dynamic:        true,
+			EventGroupName:   groupUrlName,
+			GroupName:        groupUrlName,
+			Dynamic:          true,
 		}
 
 		eventsToSave = append(eventsToSave, event)
@@ -145,7 +129,7 @@ func FetchEvents(accessToken string, groupUrlName string) ([]Event, error) {
 // 	oldEvents, err := m.eventService.GetDynamicEventsForGroup(groupName)
 // 	if err != nil {
 // 		return err
-// 	
+//
 //
 // 	newEvents, err := m.FetchEvents(accessToken, groupName)
 // 	if err != nil {
