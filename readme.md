@@ -46,7 +46,7 @@ The goal is to keep it simple and accessible. Folks shouldn't struggle with sett
 
 # TODO
 
-- [ ] Hello web app
+- [x] Hello web app
 - [ ] Query the meetup api
 - [ ] Sign in with Github
 - [ ] Form to create a new community (don't bother with update or delete yet)
