@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	_ "errors"
 	_ "fmt"
+	"time"
 
 	"github.com/gofiber/fiber/v3/client"
 )
@@ -53,7 +54,6 @@ type MeetupResponse struct {
 		Message string `json:"message"`
 	} `json:"errors,omitempty"`
 }
-
 
 func FetchEvents(accessToken string, groupUrlName string) ([]Event, error) {
 	graphqlReq := GraphQLRequest{
@@ -109,14 +109,16 @@ func FetchEvents(accessToken string, groupUrlName string) ([]Event, error) {
 	eventsToSave := make([]Event, 0, len(decodedRsp.Data.GroupByUrlname.UpcomingEvents.Edges))
 	for _, edge := range decodedRsp.Data.GroupByUrlname.UpcomingEvents.Edges {
 
+		layout := "2006-01-02 15:04:05"
+		// todo: how to handle invalid timestamp here?
+		date, _ := time.Parse(layout, edge.Node.DateTime)
 		event := Event{
-			// ID: edge.Node.ID,
-			// EventDate: edge.Node.DateTime,
-			EventLocation:    edge.Node.Venue.Address,
-			EventDescription: "?",
-			EventGroupName:   groupUrlName,
-			GroupName:        groupUrlName,
-			Dynamic:          true,
+			Date:        date,
+			Location:    edge.Node.Venue.Address,
+			Description: "?",
+			// EventGroupName:   groupUrlName,
+			// GroupName:        groupUrlName,
+			// Dynamic:          true,
 		}
 
 		eventsToSave = append(eventsToSave, event)
