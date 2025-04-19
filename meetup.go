@@ -34,9 +34,9 @@ type MeetupResponse struct {
 			UpcomingEvents struct {
 				Edges []struct {
 					Node struct {
-						ID       string `json:"id"`
-						Title    string `json:"title"`
-						DateTime string `json:"dateTime"`
+						ID       string    `json:"id"`
+						Title    string    `json:"title"`
+						DateTime time.Time `json:"dateTime"`
 						Venue    struct {
 							Name    string `json:"name"`
 							Address string `json:"address"`
@@ -108,12 +108,8 @@ func FetchEvents(accessToken string, groupUrlName string) ([]Event, error) {
 
 	eventsToSave := make([]Event, 0, len(decodedRsp.Data.GroupByUrlname.UpcomingEvents.Edges))
 	for _, edge := range decodedRsp.Data.GroupByUrlname.UpcomingEvents.Edges {
-
-		layout := "2006-01-02 15:04:05"
-		// todo: how to handle invalid timestamp here?
-		date, _ := time.Parse(layout, edge.Node.DateTime)
 		event := Event{
-			Date:        date,
+			Date:        edge.Node.DateTime,
 			Location:    edge.Node.Venue.Address,
 			Description: "?",
 			// EventGroupName:   groupUrlName,
@@ -161,113 +157,92 @@ func FetchEvents(accessToken string, groupUrlName string) ([]Event, error) {
 //
 // 	return nil
 // }
-//
-// // VerifyGroupParameters verifies that the group is in Calgary and has Technology as its topic
-// func (m *MeetupService) VerifyGroupParameters(groupName string, accessToken string) error {
-// 	// Create GraphQL query
-// 	graphqlReq := GraphQLRequest{
-// 		Query: `
-//             query GetEventsByGroup($groupUrlname: String!) {
-//                 groupByUrlname(urlname: $groupUrlname) {
-//                     id
-//                     name
-//                     city
-//                     topicCategory {
-//                         id
-//                         urlkey
-//                         name
-//                         color
-//                         imageUrl
-//                         defaultTopic {
-//                             name
-//                         }
-//                     }
-//                 }
-//             }
-//         `,
-// 		Variables: map[string]interface{}{
-// 			"groupUrlname": groupName,
-// 		},
-// 	}
-//
-// 	// Marshal request to JSON
-// 	graphqlReqBytes, err := json.Marshal(graphqlReq)
-// 	if err != nil {
-// 		return err
-// 	}
-//
-// 	// Create an HTTP client using Fiber's Agent
-// 	agent := fiber.AcquireAgent()
-// 	defer fiber.ReleaseAgent(agent)
-//
-// 	// Setup the request
-// 	req := agent.Request()
-// 	req.Header.Set("Authorization", "Bearer "+accessToken)
-// 	req.Header.Set("Content-Type", "application/json")
-// 	req.SetRequestURI(MeetupGraphqlApiUrl)
-// 	req.SetBody(graphqlReqBytes)
-// 	req.Header.SetMethod(fiber.MethodPost)
-//
-// 	// Send the request
-// 	if err := agent.Parse(); err != nil {
-// 		return err
-// 	}
-//
-// 	// Get the response
-// 	resp, errs := agent.Bytes()
-// 	if len(errs) > 0 {
-// 		return errs[0]
-// 	}
-//
-// 	// Parse response
-// 	var result map[string]interface{}
-// 	if err := json.Unmarshal(resp, &result); err != nil {
-// 		return err
-// 	}
-//
-// 	// Check for errors in the GraphQL response
-// 	if errNodes, exists := result["errors"].([]interface{}); exists && len(errNodes) > 0 {
-// 		if errMsg, ok := errNodes[0].(map[string]interface{})["message"].(string); ok {
-// 			return GraphQLError{Message: errMsg}
-// 		}
-// 		return GraphQLError{Message: "Unknown GraphQL error"}
-// 	}
-//
-// 	// Extract city and topic category
-// 	data, ok := result["data"].(map[string]interface{})
-// 	if !ok {
-// 		return errors.New("invalid response format: missing data field")
-// 	}
-//
-// 	groupByUrlname, ok := data["groupByUrlname"].(map[string]interface{})
-// 	if !ok {
-// 		return errors.New("invalid response format: missing groupByUrlname field")
-// 	}
-//
-// 	// Check city
-// 	city, ok := groupByUrlname["city"].(string)
-// 	if !ok {
-// 		return errors.New("invalid response format: missing city field")
-// 	}
-//
-// 	if city != "Calgary" {
-// 		return InvalidGroupParameterError{Message: fmt.Sprintf("Group from wrong city provided. Provided '%s'", city)}
-// 	}
-//
-// 	// Check topic category
-// 	topicCategory, ok := groupByUrlname["topicCategory"].(map[string]interface{})
-// 	if !ok {
-// 		return errors.New("invalid response format: missing topicCategory field")
-// 	}
-//
-// 	topicCategoryName, ok := topicCategory["name"].(string)
-// 	if !ok {
-// 		return errors.New("invalid response format: missing topicCategory.name field")
-// 	}
-//
-// 	if topicCategoryName != "Technology" {
-// 		return InvalidGroupParameterError{Message: fmt.Sprintf("Group from wrong topic category provided. Provided '%s'", topicCategoryName)}
-// 	}
-//
-// 	return nil
-// }
+
+type GroupParametersResponse struct {
+	Data struct {
+		GroupByUrlname struct {
+			ID            string `json:"id"`
+			Name          string `json:"name"`
+			City          string `json:"city"`
+			TopicCategory struct {
+				ID           string `json:"id"`
+				URLKey       string `json:"urlkey"`
+				Name         string `json:"name"`
+				Color        string `json:"color"`
+				ImageURL     string `json:"imageUrl"`
+				DefaultTopic struct {
+					Name string `json:"name"`
+				} `json:"defaultTopic"`
+			} `json:"topicCategory"`
+		} `json:"groupByUrlname"`
+	} `json:"data"`
+}
+
+type GroupParameters struct {
+	City  string
+	Topic string
+}
+
+// VerifyGroupParameters verifies that the group is in Calgary and has Technology as its topic
+func GetGroupParameters(groupName string, accessToken string) (GroupParameters, error) {
+	// Create GraphQL query
+	graphqlReq := GraphQLRequest{
+		Query: `
+            query GetEventsByGroup($groupUrlname: String!) {
+                groupByUrlname(urlname: $groupUrlname) {
+                    id
+                    name
+                    city
+                    topicCategory {
+                        id
+                        urlkey
+                        name
+                        color
+                        imageUrl
+                        defaultTopic {
+                            name
+                        }
+                    }
+                }
+            }
+        `,
+		Variables: map[string]interface{}{
+			"groupUrlname": groupName,
+		},
+	}
+
+	// Marshal request to JSON
+	graphqlReqBytes, err := json.Marshal(graphqlReq)
+	if err != nil {
+		return GroupParameters{}, err
+	}
+
+	cc := client.New()
+	rsp, err := cc.Post(MeetupGraphqlApiUrl, client.Config{
+		Header: map[string]string{
+			"Authorization": "Bearer " + accessToken,
+			"Content-Type":  "application/json",
+		},
+		Body: graphqlReqBytes,
+	})
+	if err != nil {
+		return GroupParameters{}, err
+	}
+
+	var parsedRsp GroupParametersResponse
+	if err := json.Unmarshal(rsp.Body(), &parsedRsp); err != nil {
+		return GroupParameters{}, err
+	}
+	return GroupParameters{
+		City:  parsedRsp.Data.GroupByUrlname.City,
+		Topic: parsedRsp.Data.GroupByUrlname.TopicCategory.Name,
+	}, nil
+}
+
+	// todo: keep
+	// if city != "Calgary" {
+	// 	return InvalidGroupParameterError{Message: fmt.Sprintf("Group from wrong city provided. Provided '%s'", city)}
+	// }
+	// if topicCategoryName != "Technology" {
+	// 	return InvalidGroupParameterError{Message: fmt.Sprintf("Group from wrong topic category provided. Provided '%s'", topicCategoryName)}
+	// }
